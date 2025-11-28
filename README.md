@@ -1,100 +1,109 @@
-# CR-Solutions sysctl tuning
+# High-Performance Linux sysctl Configuration
 
-This repository contains a curated sysctl.conf tuned for server workloads and high-performance networking (including 100G with higher RTTs). The settings are a consolidation of recommendations from NSA security guidance, Linux network tuning sources (2013+), and performance tuning guidance from experts like Brendan Gregg / Netflix.
+Production-ready sysctl.conf optimized for high-performance servers and 100G+ networking environments. Based on NSA security guidelines, Linux network tuning best practices, and performance insights from Netflix/Brendan Gregg.
 
-The included sysctl.conf focuses on:
-- Basic networking hardening (ICMP protections, rp_filter, disabling redirects)
-- Defensive defaults (syncookies, martian logging)
-- TCP performance and buffer tuning for high-bandwidth, high-latency paths
-- Resource limits (file descriptors, PID limits, shared memory)
-- Memory and VM behavior suitable for servers and containerized workloads
+**Key optimizations:**
+- Network security hardening (ICMP, redirects, source routing)
+- TCP performance tuning for high-bandwidth, high-latency networks
+- Memory management for containerized workloads
+- Resource scaling (file descriptors, connection limits)
+- DDoS mitigation and connection handling
 
-Source sysctl file: https://github.com/cr-solutions/sysctl/blob/c9c0459e2cb6de51a1a83eb251ad1affb60bbf75/sysctl.conf
+## Quick Start
 
-## Quick apply (example)
+```bash
+# Backup current configuration
+sudo cp /etc/sysctl.conf /etc/sysctl.conf.backup
 
-1. Review the file and adjust values that are environment-specific (notes below).
-2. Backup your current sysctl.conf:
-   sudo cp /etc/sysctl.conf /etc/sysctl.conf.bak
-3. Copy this file to /etc and reload:
-   sudo cp sysctl.conf /etc/sysctl.conf
-   sudo sysctl --system
-   or
-   sudo sysctl -p /etc/sysctl.conf
+# Apply new configuration
+sudo cp sysctl.conf /etc/sysctl.conf
+sudo sysctl --system
 
-To check a single value:
-   sysctl net.core.rmem_max
+# Verify settings
+sysctl net.core.rmem_max
+sysctl -a | grep tcp | head -10
+```
 
-To show all TCP-related settings:
-   sysctl -a | grep tcp
+## Performance Tuning by Network Speed
 
-## Key settings and rationale
+| Network | rmem_max/wmem_max | Use Case |
+|---------|-------------------|----------|
+| 1GbE    | 16MB             | Standard servers |
+| 10GbE   | 32-56MB          | High-performance servers |
+| 100GbE  | 2GB              | Ultra-high-speed networks |
 
-- net.ipv4.icmp_echo_ignore_broadcasts = 1  
-  Protects against some ICMP-based amplification attacks.
+## Critical Settings Explained
 
-- net.ipv4.tcp_syncookies = 1  
-  Helps mitigate SYN flood attacks.
+**Security Hardening:**
+- `net.ipv4.tcp_syncookies=1` - SYN flood protection
+- `net.ipv4.icmp_echo_ignore_broadcasts=1` - ICMP amplification protection
+- `net.ipv4.conf.all.rp_filter=1` - Source validation (strict mode)
 
-- net.core.somaxconn = 262144  
-  Allows large TCP accept queue, useful for high-connection-rate services / LBs.
+**High-Performance Networking:**
+- `net.core.somaxconn=262144` - Large TCP accept queue for load balancers
+- `net.ipv4.tcp_congestion_control=htcp` - Optimized for high-speed, long-distance networks
+- `net.core.default_qdisc=fq` - Fair queueing for reduced latency
+- `net.ipv4.tcp_tw_reuse=1` - Efficient TIME_WAIT socket reuse
 
-- net.core.rmem_max / wmem_max and net.ipv4.tcp_rmem / tcp_wmem  
-  Increased receive/send buffers to support very high bandwidth-delay product (BDP) links.
-  Default values here are tuned for very high throughput (10G–100G class). Adjust to your NIC, memory, and expected RTTs.
+**Memory Management:**
+- `vm.swappiness=10` - Prefer RAM over swap
+- `vm.overcommit_memory=1` - Container-friendly memory overcommit
+- `vm.min_free_kbytes=1048576` - Keep 1GB free for emergencies
 
-- net.ipv4.tcp_congestion_control = htcp  
-  HTCP recommended here for high-speed, long-fat networks. Validate kernel support on your systems.
+## Compatibility & Warnings
 
-- net.core.default_qdisc = fq  
-  fq (Fair Queueing) helps reduce latency and improve fairness for modern workloads.
+⚠️ **Test in staging before production deployment**
 
-- vm.swappiness = 10, vm.vfs_cache_pressure = 50  
-  Suggests preference for keeping application memory and inode/dentry caches appropriately.
+**Kernel Requirements:**
+```bash
+# Verify congestion control support
+cat /proc/sys/net/ipv4/tcp_available_congestion_control
 
-- vm.overcommit_memory = 1, vm.oom_kill_allocating_task = 1  
-  Helpful in container environments—allows overcommit and kills the allocating process on OOM.
+# Check qdisc support
+tc qdisc show dev eth0
+```
 
-- kernel.shmmax / shmall  
-  Shared memory limits (512M in the file). Increase if your workloads (databases, IPC) require more.
+**Environment Considerations:**
+- **Routers/BGP**: Set `rp_filter=2` or `rp_filter=0`
+- **Memory-constrained systems**: Reduce `vm.min_free_kbytes` and buffer sizes
+- **Ubuntu compatibility**: Some parameters may not exist in all kernel versions
 
-- net.ipv4.tcp_tw_reuse = 1 and tcp_fin_timeout=10  
-  Help reduce TIME_WAIT pressure on busy servers; tcp_tw_recycle is explicitly disabled due to NAT/load-balancer problems.
+## Custom Tuning Guidelines
 
-## Warnings and compatibility
+**Buffer Sizing Formula:**
+```
+Optimal Buffer = Bandwidth × RTT
+Example: 10Gbps × 100ms = 125MB
+```
 
-- These settings are opinionated and intended for servers or network devices where you can control the environment. Test in staging before production.
-- Some tunables are only appropriate for hosts (not routers) — e.g., rp_filter. On routers or BGP environments, rp_filter may need to be 2 or disabled.
-- tcp_congestion_control and qdisc require kernel support. Verify available congestion control algorithms and qdiscs on your kernel:
-  cat /proc/sys/net/ipv4/tcp_available_congestion_control
-  tc qdisc show dev <interface>
-- Very large buffer values consume memory; ensure your system has adequate RAM before applying maximums.
-- vm.min_free_kbytes is set to a large value (1GB) here — be cautious on memory-constrained systems.
+**High-Traffic Servers:**
+- Increase `netdev_max_backlog` and `tcp_max_syn_backlog`
+- Ensure `tcp_rmem`/`tcp_wmem` max values match `rmem_max`/`wmem_max`
+- Monitor with `ss -s` and adjust accordingly
 
-## Tuning guidance / suggestions
+## Validation & Testing
 
-- For 1GbE, lower extremes are usually appropriate (e.g., rmem_max/wmem_max ~ 16MB).
-- For 10GbE, consider rmem_max/wmem_max 32–56MB.
-- For 100GbE with high RTTs, larger values may be required (and are set in this file).
-- Increase net.core.netdev_max_backlog and tcp_max_syn_backlog for high packet/connection bursts.
-- If you change buffer sizes, review tcp_rmem and tcp_wmem min/default/max triplets to ensure they match rmem_max/wmem_max.
+```bash
+# Socket statistics
+ss -s
 
-## Testing & verification
+# Network performance testing
+iperf3 -c target_host -t 60 -P 4
 
-After applying:
-- Use `ss -s` and `ss -t` to inspect socket states and tune effects.
-- Measure throughput with iperf3 across expected network paths and RTTs.
-- Monitor system memory and swap usage; ensure no undesirable memory pressure is introduced.
+# Memory monitoring
+free -h && cat /proc/meminfo | grep -E "(MemFree|Buffers|Cached)"
+
+# TCP settings verification
+sysctl -a | grep -E "(rmem|wmem|tcp_congestion)"
+```
 
 ## License
 
-This repository and the included sysctl.conf are distributed under the Mozilla Public License 2.0. See the header comments in sysctl.conf for more details.
+Mozilla Public License 2.0 - See [sysctl.conf](sysctl.conf) header for details.
 
 ## Contributing
 
-Contributions, improvements, and pull requests are welcome. If you submit changes, include rationale and test results where applicable.
+Pull requests welcome. Include performance test results and rationale for changes.
 
-## Author / Contact
-
-CR-Solutions / Ricardo Cescon  
-https://cr-solutions.net
+---
+**Author:** Ricardo Cescon | [CR-Solutions](https://cr-solutions.net) | [cescon.de](https://cescon.de)
