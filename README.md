@@ -66,7 +66,7 @@ tc qdisc show dev eth0
 **Environment Considerations:**
 - **Routers/BGP**: Set `rp_filter=2` or `rp_filter=0`
 - **Memory-constrained systems**: Reduce `vm.min_free_kbytes` and buffer sizes
-- **Ubuntu compatibility**: Some parameters may not exist in all kernel versions
+- **Linux / WSL compatibility**: Some parameters may not exist in all kernel versions
 
 ## Custom Tuning Guidelines
 
