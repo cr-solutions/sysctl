@@ -76,6 +76,52 @@ Optimal Buffer = Bandwidth × RTT
 Example: 10Gbps × 100ms = 125MB
 ```
 
+**Inotify Tuning:**
+- `fs.inotify.max_user_watches=524288` - Supports IDEs, file watchers, containers, zero-downtime deployments, log/cache management, and process managers/microservices (default 8192 is too low)
+- `fs.inotify.max_user_instances=512` - Allows more inotify instances per user (default 128)
+- Safe for 4GB+ servers; each watch uses ~1KB of kernel memory (~512MB at max)
+- Scaling formula: allocate ~10-15% of RAM for watches max → `watches = (RAM_in_GB × 0.10) × 1024 × 1024`
+
+| RAM   | max_user_watches | max_user_instances | Max memory usage |
+|-------|------------------|--------------------|------------------|
+| 4GB   | 524288           | 512                | ~512MB           |
+| 8GB   | 1048576          | 1024               | ~1GB             |
+| 16GB  | 2097152          | 2048               | ~2GB             |
+
+**Swap File Recommendation:**
+
+With `vm.swappiness=10` the system rarely swaps, but a swap file is still recommended as a safety net for OOM situations.
+
+| RAM   | Swap Size |
+|-------|-----------|
+| 4GB   | 4GB       |
+| 8GB   | 4GB       |
+| 16GB  | 8GB       |
+
+Setup (example for 4GB swap):
+```bash
+# 1. Turn off the current swap (if it exists)
+sudo swapoff -a
+
+# 2. Create the swap file (4GB = 4096 MB)
+sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+
+# 3. Set secure permissions
+sudo chmod 600 /swapfile
+
+# 4. Set up the file as Linux swap area
+sudo mkswap /swapfile
+
+# 5. Enable the swap file
+sudo swapon /swapfile
+
+# 6. Make it persistent across reboots
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 7. Verify
+free -h
+```
+
 **High-Traffic Servers:**
 - Increase `netdev_max_backlog` and `tcp_max_syn_backlog`
 - Ensure `tcp_rmem`/`tcp_wmem` max values match `rmem_max`/`wmem_max`
