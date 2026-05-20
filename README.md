@@ -116,7 +116,7 @@ sudo mkswap /swapfile
 sudo swapon /swapfile
 
 # 6. Make it persistent across reboots
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo '/swapfile   swap    swap    defaults    0   0' | sudo tee -a /etc/fstab
 
 # 7. Verify
 free -h
